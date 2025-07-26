@@ -826,6 +826,7 @@ impl fmt::Display for IlikeSelectItem {
         Ok(())
     }
 }
+
 /// Snowflake `EXCLUDE` information.
 ///
 /// # Syntax

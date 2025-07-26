@@ -590,6 +590,17 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if the dialect supports `COLUMNS` expressions.
+    /// For example:
+    /// `SELECT COLUMNS(*) FROM tbl`
+    /// `SELECT COLUMNS(* EXCLUDE (col1, col2)) FROM tbl`
+    /// `SELECT COLUMNS(col1, col2, col3) FROM tbl`
+    ///
+    /// [DuckDB](https://duckdb.org/docs/stable/sql/expressions/star.html#columns-expression)
+    fn supports_columns_expression(&self) -> bool {
+        false
+    }
+
     /// Returne true if the dialect supports specifying multiple options
     /// in a `CREATE TABLE` statement for the structure of the new table. For example:
     /// `CREATE TABLE t (a INT, b INT) AS SELECT 1 AS b, 2 AS a`

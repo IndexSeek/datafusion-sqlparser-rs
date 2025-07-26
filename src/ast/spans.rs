@@ -24,21 +24,21 @@ use super::{
     dcl::SecondaryRoles, value::ValueWithSpan, AccessExpr, AlterColumnOperation,
     AlterIndexOperation, AlterTableOperation, Array, Assignment, AssignmentTarget, AttachedToken,
     BeginEndStatements, CaseStatement, CloseCursor, ClusteredIndex, ColumnDef, ColumnOption,
-    ColumnOptionDef, ConditionalStatementBlock, ConditionalStatements, ConflictTarget, ConnectBy,
-    ConstraintCharacteristics, CopySource, CreateIndex, CreateTable, CreateTableOptions, Cte,
-    Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr, ExprWithAlias, Fetch, FromTable,
-    Function, FunctionArg, FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList,
-    FunctionArguments, GroupByExpr, HavingBound, IfStatement, IlikeSelectItem, IndexColumn, Insert,
-    Interpolate, InterpolateExpr, Join, JoinConstraint, JoinOperator, JsonPath, JsonPathElem,
-    LateralView, LimitClause, MatchRecognizePattern, Measure, NamedParenthesizedList,
-    NamedWindowDefinition, ObjectName, ObjectNamePart, Offset, OnConflict, OnConflictAction,
-    OnInsert, OpenStatement, OrderBy, OrderByExpr, OrderByKind, Partition, PivotValueSource,
-    ProjectionSelect, Query, RaiseStatement, RaiseStatementValue, ReferentialAction,
-    RenameSelectItem, ReplaceSelectElement, ReplaceSelectItem, Select, SelectInto, SelectItem,
-    SetExpr, SqlOption, Statement, Subscript, SymbolDefinition, TableAlias, TableAliasColumnDef,
-    TableConstraint, TableFactor, TableObject, TableOptionsClustered, TableWithJoins,
-    UpdateTableFromKind, Use, Value, Values, ViewColumnDef, WhileStatement,
-    WildcardAdditionalOptions, With, WithFill,
+    ColumnOptionDef, ColumnsExpr, ConditionalStatementBlock, ConditionalStatements, ConflictTarget,
+    ConnectBy, ConstraintCharacteristics, CopySource, CreateIndex, CreateTable, CreateTableOptions,
+    Cte, Delete, DoUpdate, ExceptSelectItem, ExcludeSelectItem, Expr, ExprWithAlias, Fetch,
+    FromTable, Function, FunctionArg, FunctionArgExpr, FunctionArgumentClause,
+    FunctionArgumentList, FunctionArguments, GroupByExpr, HavingBound, IfStatement,
+    IlikeSelectItem, IndexColumn, Insert, Interpolate, InterpolateExpr, Join, JoinConstraint,
+    JoinOperator, JsonPath, JsonPathElem, LateralView, LimitClause,
+    MatchRecognizePattern, Measure, NamedParenthesizedList, NamedWindowDefinition, ObjectName,
+    ObjectNamePart, Offset, OnConflict, OnConflictAction, OnInsert, OpenStatement, OrderBy,
+    OrderByExpr, OrderByKind, Partition, PivotValueSource, ProjectionSelect, Query, RaiseStatement,
+    RaiseStatementValue, ReferentialAction, RenameSelectItem, ReplaceSelectElement,
+    ReplaceSelectItem, Select, SelectInto, SelectItem, SetExpr, SqlOption,
+    Statement, Subscript, SymbolDefinition, TableAlias, TableAliasColumnDef, TableConstraint,
+    TableFactor, TableObject, TableOptionsClustered, TableWithJoins, UpdateTableFromKind, Use,
+    Value, Values, ViewColumnDef, WhileStatement, WildcardAdditionalOptions, With, WithFill,
 };
 
 /// Given an iterator of spans, return the [Span::union] of all spans.
@@ -1629,6 +1629,7 @@ impl Spanned for Expr {
             Expr::Prior(expr) => expr.span(),
             Expr::Lambda(_) => Span::empty(),
             Expr::MemberOf(member_of) => member_of.value.span().union(&member_of.array.span()),
+            Expr::Columns(columns_expr) => columns_expr.span(),
         }
     }
 }
@@ -1659,6 +1660,17 @@ impl Spanned for AccessExpr {
         match self {
             AccessExpr::Dot(ident) => ident.span(),
             AccessExpr::Subscript(subscript) => subscript.span(),
+        }
+    }
+}
+
+impl Spanned for ColumnsExpr {
+    fn span(&self) -> Span {
+        match self {
+            ColumnsExpr::Wildcard(options) => options.span(),
+            ColumnsExpr::Array(_) => Span::empty(),
+            ColumnsExpr::Lambda(_) => Span::empty(),
+            ColumnsExpr::Regex(_) => Span::empty(),
         }
     }
 }
@@ -1892,6 +1904,7 @@ impl Spanned for ReplaceSelectElement {
         expr.span().union(&column_name.span)
     }
 }
+
 
 /// # partial span
 ///

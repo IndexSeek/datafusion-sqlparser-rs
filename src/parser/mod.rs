@@ -2047,7 +2047,78 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_function(&mut self, name: ObjectName) -> Result<Expr, ParserError> {
+        // Special handling for COLUMNS expression
+        if name.0.len() == 1 {
+            if let ObjectNamePart::Identifier(ident) = &name.0[0] {
+                if ident.value.to_uppercase() == "COLUMNS"
+                    && self.dialect.supports_columns_expression()
+                {
+                    return self.parse_columns_expr();
+                }
+            }
+        }
         self.parse_function_call(name).map(Expr::Function)
+    }
+
+    /// Parse a COLUMNS expression
+    /// Syntax:
+    /// - `COLUMNS(*)` with optional modifiers (EXCLUDE, REPLACE, RENAME)
+    /// - `COLUMNS(['col1', 'col2'])` - Array of column names
+    /// - `COLUMNS(c -> expr)` - Lambda function for column selection
+    /// - `COLUMNS('regex_pattern')` - Regular expression pattern
+    fn parse_columns_expr(&mut self) -> Result<Expr, ParserError> {
+        self.expect_token(&Token::LParen)?;
+
+        let expr = if self.consume_token(&Token::Mul) {
+            // Parse COLUMNS(*) with optional modifiers
+            let wildcard_token = self.get_previous_token().clone();
+            let options = self.parse_wildcard_additional_options(wildcard_token)?;
+            ColumnsExpr::Wildcard(options)
+        } else if self.peek_token().token == Token::LBracket {
+            // Parse COLUMNS(['col1', 'col2'])
+            let array_expr = self.parse_expr()?;
+            if let Expr::Array(array) = array_expr {
+                let mut column_names = Vec::new();
+                for elem in array.elem {
+                    if let Expr::Value(ValueWithSpan { value: Value::SingleQuotedString(s), .. }) = elem {
+                        column_names.push(s);
+                    } else {
+                        return self.expected("string literal in array", self.peek_token());
+                    }
+                }
+                ColumnsExpr::Array(column_names)
+            } else {
+                return self.expected("array of strings", self.peek_token());
+            }
+        } else if let Token::SingleQuotedString(pattern) = &self.peek_token().token {
+            // Parse COLUMNS('regex_pattern')
+            let pattern = pattern.clone();
+            self.next_token();
+            ColumnsExpr::Regex(pattern)
+        } else {
+            // Check if this might be a lambda function: identifier -> expr
+            let checkpoint = self.index;
+            if let Ok(ident) = self.parse_identifier() {
+                if self.parse_keyword(Keyword::LAMBDA) || self.consume_token(&Token::Arrow) {
+                    // Parse lambda function: c -> c LIKE '%pattern%'
+                    let body = self.parse_expr()?;
+                    let lambda = LambdaFunction {
+                        params: OneOrManyWithParens::One(ident),
+                        body: Box::new(body),
+                    };
+                    ColumnsExpr::Lambda(lambda)
+                } else {
+                    // Reset and return error
+                    self.index = checkpoint;
+                    return self.expected("*, array ['col1', 'col2'], lambda function, or regex pattern", self.peek_token());
+                }
+            } else {
+                return self.expected("*, array ['col1', 'col2'], lambda function, or regex pattern", self.peek_token());
+            }
+        };
+
+        self.expect_token(&Token::RParen)?;
+        Ok(Expr::Columns(expr))
     }
 
     fn parse_function_call(&mut self, name: ObjectName) -> Result<Function, ParserError> {

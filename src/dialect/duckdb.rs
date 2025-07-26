@@ -104,4 +104,8 @@ impl Dialect for DuckDbDialect {
     fn supports_notnull_operator(&self) -> bool {
         true
     }
+
+    fn supports_columns_expression(&self) -> bool {
+        true
+    }
 }

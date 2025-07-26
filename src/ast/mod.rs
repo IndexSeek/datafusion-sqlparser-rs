@@ -75,16 +75,17 @@ pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
     AfterMatchSkip, ConnectBy, Cte, CteAsMaterialized, Distinct, EmptyMatchesMode,
     ExceptSelectItem, ExcludeSelectItem, ExprWithAlias, ExprWithAliasAndOrderBy, Fetch, ForClause,
-    ForJson, ForXml, FormatClause, GroupByExpr, GroupByWithModifier, IdentWithAlias,
-    IlikeSelectItem, InputFormatClause, Interpolate, InterpolateExpr, Join, JoinConstraint,
-    JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling, JsonTableNamedColumn,
-    JsonTableNestedColumn, LateralView, LimitClause, LockClause, LockType, MatchRecognizePattern,
-    MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset,
-    OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
-    PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
-    RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, Select,
-    SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, SetOperator,
-    SetQuantifier, Setting, SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
+    ForJson, ForXml, FormatClause, GroupByExpr, GroupByWithModifier,
+    IdentWithAlias, IlikeSelectItem, InputFormatClause, Interpolate, InterpolateExpr, Join,
+    JoinConstraint, JoinOperator, JsonTableColumn, JsonTableColumnErrorHandling,
+    JsonTableNamedColumn, JsonTableNestedColumn, LateralView, LimitClause,
+    LockClause, LockType, MatchRecognizePattern, MatchRecognizeSymbol, Measure,
+    NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset, OffsetRows, OpenJsonTableColumn,
+    OrderBy, OrderByExpr, OrderByKind, OrderByOptions, PipeOperator, PivotValueSource,
+    ProjectionSelect, Query, RenameSelectItem, RepetitionQuantifier, ReplaceSelectElement,
+    ReplaceSelectItem, RowsPerMatch, Select, SelectFlavor, SelectInto, SelectItem,
+    SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Setting,
+    SymbolDefinition, Table, TableAlias, TableAliasColumnDef, TableFactor,
     TableFunctionArgs, TableIndexHintForClause, TableIndexHintType, TableIndexHints,
     TableIndexType, TableSample, TableSampleBucket, TableSampleKind, TableSampleMethod,
     TableSampleModifier, TableSampleQuantity, TableSampleSeed, TableSampleSeedModifier,
@@ -1148,6 +1149,61 @@ pub enum Expr {
     Lambda(LambdaFunction),
     /// Checks membership of a value in a JSON array
     MemberOf(MemberOf),
+    /// `COLUMNS` expression
+    ///
+    /// Syntax:
+    /// ```sql
+    /// COLUMNS(*)
+    /// COLUMNS(* EXCLUDE (col1, col2))
+    /// COLUMNS(* REPLACE (expr AS col))
+    /// COLUMNS(col1, col2, col3)
+    /// ```
+    ///
+    /// DuckDB: <https://duckdb.org/docs/stable/sql/expressions/star.html#columns-expression>
+    Columns(ColumnsExpr),
+}
+
+/// A `COLUMNS` expression
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum ColumnsExpr {
+    /// `COLUMNS(*)` with optional modifiers (EXCLUDE, REPLACE, RENAME)
+    Wildcard(WildcardAdditionalOptions),
+    /// `COLUMNS(['col1', 'col2'])` - Array of column names
+    Array(Vec<String>),
+    /// `COLUMNS(c -> expr)` - Lambda function for column selection
+    Lambda(LambdaFunction),
+    /// `COLUMNS('regex_pattern')` - Regular expression pattern
+    Regex(String),
+}
+
+impl fmt::Display for ColumnsExpr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "COLUMNS(")?;
+        match self {
+            ColumnsExpr::Wildcard(options) => {
+                write!(f, "*{options}")?;
+            }
+            ColumnsExpr::Array(cols) => {
+                write!(f, "[")?;
+                for (i, col) in cols.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "'{}'", value::escape_single_quote_string(col))?;
+                }
+                write!(f, "]")?;
+            }
+            ColumnsExpr::Lambda(lambda) => {
+                write!(f, "{lambda}")?;
+            }
+            ColumnsExpr::Regex(pattern) => {
+                write!(f, "'{}'", value::escape_single_quote_string(pattern))?;
+            }
+        }
+        write!(f, ")")
+    }
 }
 
 impl Expr {
@@ -1937,6 +1993,7 @@ impl fmt::Display for Expr {
             Expr::Prior(expr) => write!(f, "PRIOR {expr}"),
             Expr::Lambda(lambda) => write!(f, "{lambda}"),
             Expr::MemberOf(member_of) => write!(f, "{member_of}"),
+            Expr::Columns(columns) => write!(f, "{columns}"),
         }
     }
 }

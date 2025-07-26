@@ -16377,3 +16377,150 @@ fn parse_drop_stream() {
     }
     verified_stmt("DROP STREAM IF EXISTS s1");
 }
+
+#[test]
+fn parse_columns_expression_generic_dialect() {
+    use sqlparser::ast::{ColumnsExpr, ExcludeSelectItem};
+    use sqlparser::dialect::GenericDialect;
+    use sqlparser::parser::Parser;
+
+    // Test COLUMNS with EXCLUDE using GenericDialect
+    let sql = "SELECT COLUMNS(* EXCLUDE (id, created_at)) FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert_eq!(
+                options.opt_exclude,
+                Some(ExcludeSelectItem::Multiple(vec![
+                    Ident::new("id"),
+                    Ident::new("created_at")
+                ]))
+            );
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard and EXCLUDE"),
+    }
+
+    // Test basic COLUMNS(*)
+    let sql = "SELECT COLUMNS(*) FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert!(options.opt_exclude.is_none());
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard"),
+    }
+
+    // Test COLUMNS with array syntax
+    let sql = "SELECT COLUMNS(['name', 'email']) FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Array(cols))) => {
+            assert_eq!(cols, &vec!["name".to_string(), "email".to_string()]);
+        }
+        _ => panic!("Expected COLUMNS expression with array"),
+    }
+
+    // Test COLUMNS with RENAME (supported in GenericDialect)
+    let sql = "SELECT COLUMNS(* RENAME (col1 AS height)) FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert!(options.opt_rename.is_some());
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard and RENAME"),
+    }
+
+    // Test COLUMNS with lambda expression (supported in GenericDialect)
+    let sql = "SELECT COLUMNS(c -> c LIKE 'user_%') FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Lambda(_))) => {
+            // Lambda function parsed successfully
+        }
+        _ => panic!("Expected COLUMNS expression with lambda"),
+    }
+
+    // Test COLUMNS with regex pattern (supported in GenericDialect)
+    let sql = "SELECT COLUMNS('^user_.*') FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Regex(pattern))) => {
+            assert_eq!(pattern, "^user_.*");
+        }
+        _ => panic!("Expected COLUMNS expression with regex"),
+    }
+
+    // Test COLUMNS with all features combined
+    let sql = "SELECT COLUMNS(* EXCLUDE (created_at) REPLACE (name AS full_name)) FROM users";
+    let statements = Parser::parse_sql(&GenericDialect {}, sql).unwrap();
+    let query = match &statements[0] {
+        Statement::Query(q) => q,
+        _ => panic!("Expected query"),
+    };
+    let select = match &*query.body {
+        SetExpr::Select(s) => s,
+        _ => panic!("Expected select"),
+    };
+
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert!(options.opt_exclude.is_some());
+            assert!(options.opt_replace.is_some());
+        }
+        _ => panic!("Expected COLUMNS expression with combined features"),
+    }
+}

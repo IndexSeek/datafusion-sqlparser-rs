@@ -862,3 +862,162 @@ fn test_duckdb_trim() {
         duckdb().parse_sql_statements(error_sql).unwrap_err()
     );
 }
+
+#[test]
+fn test_columns_with_exclude() {
+    // Test COLUMNS with EXCLUDE
+    let select = duckdb().verified_only_select("SELECT COLUMNS(* EXCLUDE (col1, col2)) FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert_eq!(
+                options.opt_exclude,
+                Some(ExcludeSelectItem::Multiple(vec![
+                    Ident::new("col1"),
+                    Ident::new("col2")
+                ]))
+            );
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard and EXCLUDE"),
+    }
+
+    // Test COLUMNS with single EXCLUDE without parentheses
+    let select = duckdb().verified_only_select("SELECT COLUMNS(* EXCLUDE col1) FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert_eq!(
+                options.opt_exclude,
+                Some(ExcludeSelectItem::Single(Ident::new("col1")))
+            );
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard and EXCLUDE"),
+    }
+
+    // Test basic COLUMNS(*)
+    let select = duckdb().verified_only_select("SELECT COLUMNS(*) FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert!(options.opt_exclude.is_none());
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard"),
+    }
+
+    // Test COLUMNS with array syntax
+    let select = duckdb().verified_only_select("SELECT COLUMNS(['col1', 'col2', 'col3']) FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Array(cols))) => {
+            assert_eq!(
+                cols,
+                &vec!["col1".to_string(), "col2".to_string(), "col3".to_string()]
+            );
+        }
+        _ => panic!("Expected COLUMNS expression with array"),
+    }
+
+    // Test round-trip conversion
+    let sql = "SELECT COLUMNS(* EXCLUDE (department_id, salary)) FROM employees";
+    let parsed = duckdb().verified_query(sql);
+    assert_eq!(parsed.to_string(), sql);
+}
+
+#[test]
+fn test_columns_with_replace() {
+    // Test COLUMNS with REPLACE
+    let select =
+        duckdb().verified_only_select("SELECT COLUMNS(* REPLACE (col1 + 1 AS col1)) FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert!(options.opt_replace.is_some());
+            assert!(options.opt_exclude.is_none());
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard and REPLACE"),
+    }
+
+    // Test COLUMNS with both EXCLUDE and REPLACE
+    let select = duckdb().verified_only_select(
+        "SELECT COLUMNS(* EXCLUDE (id) REPLACE (score * 100 AS score)) FROM tbl",
+    );
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Wildcard(options))) => {
+            assert!(options.opt_exclude.is_some());
+            assert!(options.opt_replace.is_some());
+        }
+        _ => panic!("Expected COLUMNS expression with wildcard, EXCLUDE and REPLACE"),
+    }
+
+    // Test round-trip for REPLACE
+    let sql = "SELECT COLUMNS(* REPLACE (amount / 100 AS amount)) FROM transactions";
+    let parsed = duckdb().verified_query(sql);
+    assert_eq!(parsed.to_string(), sql);
+}
+
+#[test]
+fn test_columns_with_lambda() {
+    use sqlparser::ast::ColumnsExpr;
+
+    // Test COLUMNS with lambda expression
+    let select = duckdb().verified_only_select("SELECT COLUMNS(c -> c LIKE '%name%') FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Lambda(_))) => {
+            // Lambda function parsed successfully
+        }
+        _ => panic!("Expected COLUMNS expression with lambda"),
+    }
+
+    // Test round-trip for lambda
+    let sql = "SELECT COLUMNS(c -> c LIKE '%user%') FROM users";
+    let parsed = duckdb().verified_query(sql);
+    assert_eq!(parsed.to_string(), sql);
+}
+
+#[test]
+fn test_columns_with_regex() {
+    use sqlparser::ast::ColumnsExpr;
+
+    // Test COLUMNS with regex pattern
+    let select = duckdb().verified_only_select("SELECT COLUMNS('^col.*') FROM tbl");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Regex(pattern))) => {
+            assert_eq!(pattern, "^col.*");
+        }
+        _ => panic!("Expected COLUMNS expression with regex"),
+    }
+
+    // Test round-trip for regex
+    let sql = "SELECT COLUMNS('^user_.*') FROM users";
+    let parsed = duckdb().verified_query(sql);
+    assert_eq!(parsed.to_string(), sql);
+}
+
+#[test]
+fn test_columns_array_syntax() {
+    use sqlparser::ast::ColumnsExpr;
+
+    // Test COLUMNS with array of column names
+    let select = duckdb().verified_only_select("SELECT COLUMNS(['id', 'name', 'email']) FROM users");
+    match &select.projection[0] {
+        SelectItem::UnnamedExpr(Expr::Columns(ColumnsExpr::Array(cols))) => {
+            assert_eq!(cols, &vec!["id".to_string(), "name".to_string(), "email".to_string()]);
+        }
+        _ => panic!("Expected COLUMNS expression with array"),
+    }
+
+    // Test round-trip for array syntax
+    let sql = "SELECT COLUMNS(['first_name', 'last_name']) FROM employees";
+    let parsed = duckdb().verified_query(sql);
+    assert_eq!(parsed.to_string(), sql);
+}
+
+#[test]
+fn test_columns_error_cases() {
+    // Test invalid syntax - empty parentheses
+    let sql = "SELECT COLUMNS() FROM tbl";
+    assert!(duckdb().parse_sql_statements(sql).is_err());
+
+    // Test RENAME not supported in DuckDB dialect (should error)
+    let sql = "SELECT COLUMNS(* RENAME (col1 AS height)) FROM tbl";
+    assert!(duckdb().parse_sql_statements(sql).is_err());
+
+    // Test invalid array syntax
+    let sql = "SELECT COLUMNS([col1, col2]) FROM tbl"; // Missing quotes
+    assert!(duckdb().parse_sql_statements(sql).is_err());
+}
